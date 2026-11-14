@@ -132,6 +132,8 @@ class SettingsActivity : Activity() {
         }
         slider("Tamanho dos icones", 40, 76, Prefs.iconSize, "dp") { Prefs.iconSize = it }
         slider("Colunas na lista", 3, 6, Prefs.columns, "") { Prefs.columns = it }
+        slider("Colunas da tela inicial", 3, 6, Prefs.homeCols, "") { Prefs.homeCols = it }
+        slider("Linhas da tela inicial", 4, 8, Prefs.homeRows, "") { Prefs.homeRows = it }
         toggle("Mostrar nomes dos apps", Prefs.labels) { Prefs.labels = it }
         slider("Transparencia do dock", 10, 100, Prefs.glass, "%") { Prefs.glass = it }
         row("Mostrar apps ocultos", "${Prefs.list(Prefs.hidden).size} oculto(s)") {

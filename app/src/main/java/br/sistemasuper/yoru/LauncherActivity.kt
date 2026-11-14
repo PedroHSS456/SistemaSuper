@@ -2,6 +2,12 @@ package br.sistemasuper.yoru
 
 import android.app.Activity
 import android.app.ActivityOptions
+import android.app.AlertDialog
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.os.Handler
+import android.os.Looper
+import android.view.HapticFeedbackConstants
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -47,6 +53,9 @@ class LauncherActivity : Activity() {
     private lateinit var drawerGrid: GridLayout
     private lateinit var drawerScroll: ScrollView
     private lateinit var search: EditText
+    private lateinit var pager: Pager
+    private lateinit var dots: TextView
+    private lateinit var emptyHint: TextView
 
     private var apps: List<AppInfo> = emptyList()
     private var drawerOpen = false
@@ -62,6 +71,7 @@ class LauncherActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Prefs.init(this)
+        HomeModel.load()
 
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
@@ -112,9 +122,16 @@ class LauncherActivity : Activity() {
         top.addView(clockView)
         top.addView(dateView)
         top.addView(greetView)
-        val tlp = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        tlp.topMargin = Ui.dpi(this, 56)
-        homeLayer.addView(top, tlp)
+        top.setPadding(0, Ui.dpi(this, 56), 0, 0)
+        pager = Pager(this)
+        pager.onPage = { updateDots() }
+        val col = LinearLayout(this)
+        col.orientation = LinearLayout.VERTICAL
+        col.addView(top, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        col.addView(pager, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        val clp = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        clp.bottomMargin = Ui.dpi(this, 150)
+        homeLayer.addView(col, clp)
 
         dockBar = LinearLayout(this)
         dockBar.orientation = LinearLayout.HORIZONTAL
@@ -136,10 +153,22 @@ class LauncherActivity : Activity() {
         hlp.bottomMargin = Ui.dpi(this, 6)
         homeLayer.addView(hint, hlp)
 
-        homeLayer.setOnLongClickListener {
-            showHomeMenu()
-            true
-        }
+        dots = TextView(this)
+        dots.gravity = Gravity.CENTER
+        dots.textSize = 10f
+        val dl = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        dl.gravity = Gravity.BOTTOM
+        dl.bottomMargin = Ui.dpi(this, 136)
+        homeLayer.addView(dots, dl)
+
+        emptyHint = TextView(this)
+        emptyHint.text = "Segure a tela para importar do seu launcher\nou escolher os apps da tela inicial"
+        emptyHint.gravity = Gravity.CENTER
+        emptyHint.textSize = 13f
+        emptyHint.visibility = View.GONE
+        val elp = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+        elp.gravity = Gravity.CENTER
+        homeLayer.addView(emptyHint, elp)
     }
 
     private fun buildDrawer() {
@@ -200,6 +229,9 @@ class LauncherActivity : Activity() {
         greetView.typeface = face
         greetView.textSize = 13f
         greetView.setTextColor(p.textDim)
+        dots.setTextColor(p.accent)
+        emptyHint.typeface = face
+        emptyHint.setTextColor(p.textDim)
         homeLayer.findViewWithTag<TextView>("hint")?.let {
             it.typeface = face
             it.setTextColor(Ui.alpha(p.textDim, 150))
@@ -246,11 +278,17 @@ class LauncherActivity : Activity() {
 
     private fun reloadApps() {
         AppRepo.loadApps(this) { list ->
+            val appsChanged = list.size != apps.size || list.indices.any { list[it].key != apps[it].key }
             apps = list
             if (Prefs.dock.isEmpty()) {
                 Prefs.dock = AppRepo.defaultDock(this, list).joinToString("|")
             }
-            fillDock()
+            if (appsChanged || !homeBuilt) {
+                homeBuilt = true
+                HomeModel.clean(list.map { it.key }.toSet())
+                fillDock()
+                rebuildHome()
+            }
             if (drawerOpen) fillDrawer()
         }
     }
@@ -372,6 +410,18 @@ class LauncherActivity : Activity() {
                 }
             }
         }
+        items.add("Adicionar a tela inicial")
+        acts.add {
+            if (HomeModel.hasKey(app.key)) {
+                Toast.makeText(this, "Ja esta na tela inicial", Toast.LENGTH_SHORT).show()
+            } else if (HomeModel.addApp(app.key, pager.current)) {
+                HomeModel.save()
+                rebuildHome()
+                Toast.makeText(this, "Adicionado a tela inicial", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "A tela inicial esta cheia", Toast.LENGTH_SHORT).show()
+            }
+        }
         items.add("Ocultar da lista")
         acts.add {
             Prefs.hidden = (Prefs.list(Prefs.hidden) + app.key).joinToString("|")
@@ -389,8 +439,13 @@ class LauncherActivity : Activity() {
     }
 
     private fun showHomeMenu() {
-        val items = listOf("Personalizar", "Trocar de tema", "Configuracoes do Android")
+        val items = listOf(
+            "Importar do launcher atual", "Escolher apps da tela inicial",
+            "Personalizar", "Trocar de tema", "Configuracoes do Android"
+        )
         val acts = listOf<() -> Unit>(
+            { confirmImport() },
+            { chooseHomeApps() },
             { startActivity(Intent(this, SettingsActivity::class.java)) },
             {
                 Prefs.theme = (Prefs.theme + 1) % Themes.all.size
@@ -398,6 +453,7 @@ class LauncherActivity : Activity() {
                 applyLook()
                 fillDock()
                 if (drawerOpen) fillDrawer()
+                rebuildHome()
                 Toast.makeText(this, Themes.current().name, Toast.LENGTH_SHORT).show()
             },
             { startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
@@ -441,6 +497,396 @@ class LauncherActivity : Activity() {
         dialog.show()
     }
 
+    // ------------------------------------------------------------ tela inicial
+
+    private val handler = Handler(Looper.getMainLooper())
+    private var homeBuilt = false
+    private var hoverDir = 0
+    private var dragItem: HomeItem? = null
+    private var dragGhost: ImageView? = null
+    private var dragCell: View? = null
+    private var dragCancelSent = false
+    private var dragMoved = false
+    private var dragStartX = 0f
+    private var dragStartY = 0f
+    private var lastX = 0f
+    private var lastY = 0f
+
+    private fun homeIconDp(): Int {
+        val hDp = resources.displayMetrics.heightPixels / resources.displayMetrics.density
+        val cell = (hDp - 364f) / Prefs.homeRows.coerceIn(4, 8)
+        return minOf(Prefs.iconSize.toFloat(), cell - (if (Prefs.labels) 28f else 14f)).coerceAtLeast(30f).toInt()
+    }
+
+    private fun newPage(): GridPage {
+        val page = GridPage(this, Prefs.homeCols.coerceIn(3, 6), Prefs.homeRows.coerceIn(4, 8))
+        page.setOnLongClickListener {
+            showHomeMenu()
+            true
+        }
+        return page
+    }
+
+    private fun rebuildHome() {
+        HomeModel.trim()
+        val w = resources.displayMetrics.widthPixels
+        pager.row.removeAllViews()
+        for (p in 0 until HomeModel.pages) {
+            val page = newPage()
+            for (item in HomeModel.items) {
+                if (item.page == p) page.addView(makeHomeCell(item))
+            }
+            pager.row.addView(page, LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
+        pager.post { pager.goTo(pager.current.coerceIn(0, HomeModel.pages - 1), false) }
+        updateDots()
+        emptyHint.visibility = if (HomeModel.items.isEmpty() && apps.isNotEmpty()) View.VISIBLE else View.GONE
+    }
+
+    private fun updateDots() {
+        val n = HomeModel.pages
+        if (n <= 1) {
+            dots.visibility = View.GONE
+            return
+        }
+        dots.visibility = View.VISIBLE
+        dots.text = (0 until n).joinToString("   ") { if (it == pager.current) "●" else "○" }
+    }
+
+    private fun makeHomeCell(item: HomeItem): View {
+        val cell = LinearLayout(this)
+        cell.orientation = LinearLayout.VERTICAL
+        cell.gravity = Gravity.CENTER
+        cell.tag = item
+        val px = Ui.dpi(this, homeIconDp())
+        val key = item.key
+        val label: String
+        if (key != null) {
+            val app = appByKey(key) ?: return cell
+            val iv = ImageView(this)
+            cell.addView(iv, LinearLayout.LayoutParams(px, px))
+            val cached = AppRepo.cachedIcon(app, px)
+            if (cached != null) iv.setImageBitmap(cached) else AppRepo.loadIcon(this, app, px) { iv.setImageBitmap(it) }
+            label = app.label
+        } else {
+            val list = item.apps.mapNotNull { appByKey(it) }
+            cell.addView(FolderIcon(this, list, pal, px), LinearLayout.LayoutParams(px, px))
+            label = item.name
+        }
+        if (Prefs.labels) {
+            val tv = TextView(this)
+            tv.text = label
+            tv.textSize = 11f
+            tv.maxLines = 1
+            tv.ellipsize = android.text.TextUtils.TruncateAt.END
+            tv.gravity = Gravity.CENTER
+            tv.typeface = Ui.typeface(this)
+            tv.setTextColor(pal.text)
+            tv.setShadowLayer(4f, 0f, 1f, Color.BLACK)
+            val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            lp.topMargin = Ui.dpi(this, 5)
+            cell.addView(tv, lp)
+        }
+        cell.setOnClickListener {
+            if (key != null) appByKey(key)?.let { launch(it) } else openFolder(item)
+        }
+        cell.setOnLongClickListener {
+            startDrag(item, cell)
+            true
+        }
+        return cell
+    }
+
+    // --------------------------------------------------------------- arrastar
+
+    private fun startDrag(item: HomeItem, cell: View) {
+        val bmp = Bitmap.createBitmap(maxOf(1, cell.width), maxOf(1, cell.height), Bitmap.Config.ARGB_8888)
+        cell.draw(Canvas(bmp))
+        val iv = ImageView(this)
+        iv.setImageBitmap(bmp)
+        iv.alpha = 0.92f
+        iv.scaleX = 1.12f
+        iv.scaleY = 1.12f
+        root.addView(iv, FrameLayout.LayoutParams(bmp.width, bmp.height))
+        iv.x = lastX - bmp.width / 2f
+        iv.y = lastY - bmp.height / 2f
+        cell.alpha = 0.25f
+        cell.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        dragItem = item
+        dragGhost = iv
+        dragCell = cell
+        dragCancelSent = false
+        dragMoved = false
+        dragStartX = lastX
+        dragStartY = lastY
+    }
+
+    private fun handleDrag(ev: MotionEvent): Boolean {
+        if (!dragCancelSent) {
+            dragCancelSent = true
+            val c = MotionEvent.obtain(ev)
+            c.action = MotionEvent.ACTION_CANCEL
+            super.dispatchTouchEvent(c)
+            c.recycle()
+        }
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_MOVE -> {
+                val g = dragGhost
+                if (g != null) {
+                    g.x = lastX - g.width / 2f
+                    g.y = lastY - g.height / 2f
+                }
+                val slop = ViewConfiguration.get(this).scaledTouchSlop
+                if (Math.hypot((lastX - dragStartX).toDouble(), (lastY - dragStartY).toDouble()) > slop * 2) dragMoved = true
+                val w = resources.displayMetrics.widthPixels
+                val edge = Ui.dpi(this, 36)
+                val dir = if (lastX < edge) -1 else if (lastX > w - edge) 1 else 0
+                if (dir == 0) {
+                    hoverDir = 0
+                    handler.removeCallbacks(edgeRun)
+                } else if (dir != hoverDir) {
+                    hoverDir = dir
+                    handler.removeCallbacks(edgeRun)
+                    handler.postDelayed(edgeRun, 650)
+                }
+            }
+            MotionEvent.ACTION_UP -> finishDrag(true)
+            MotionEvent.ACTION_CANCEL -> finishDrag(false)
+        }
+        return true
+    }
+
+    /** Segurando na borda da tela, troca de pagina (e cria uma nova na ultima). */
+    private val edgeRun = object : Runnable {
+        override fun run() {
+            val dir = hoverDir
+            if (dragItem == null || dir == 0) return
+            val t = pager.current + dir
+            if (t < 0) return
+            if (t >= HomeModel.pages) {
+                if (HomeModel.pages >= 10) return
+                HomeModel.pages++
+                val w = resources.displayMetrics.widthPixels
+                pager.row.addView(newPage(), LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.MATCH_PARENT))
+                updateDots()
+            }
+            pager.goTo(t, true)
+            handler.postDelayed(this, 900)
+        }
+    }
+
+    private fun finishDrag(drop: Boolean) {
+        handler.removeCallbacks(edgeRun)
+        hoverDir = 0
+        val item = dragItem ?: return
+        dragGhost?.let { root.removeView(it) }
+        dragGhost = null
+        dragItem = null
+        dragCell?.alpha = 1f
+        dragCell = null
+        if (!drop) {
+            rebuildHome()
+            return
+        }
+        if (!dragMoved) {
+            showItemMenu(item)
+            return
+        }
+        val page = pager.row.getChildAt(pager.current) as? GridPage
+        val cell = page?.cellAt(lastX, lastY)
+        if (cell != null) {
+            val tx = cell.first
+            val ty = cell.second
+            val p = pager.current
+            val target = HomeModel.at(p, tx, ty)
+            val ik = item.key
+            if (target == null) {
+                item.page = p
+                item.x = tx
+                item.y = ty
+            } else if (target !== item && ik != null) {
+                if (target.key != null) {
+                    HomeModel.items.remove(item)
+                    HomeModel.makeFolder(target, ik)
+                } else {
+                    target.apps.add(ik)
+                    HomeModel.items.remove(item)
+                }
+            }
+            HomeModel.save()
+        }
+        rebuildHome()
+    }
+
+    // ------------------------------------------------------- menus da tela inicial
+
+    private fun openInfo(app: AppInfo) {
+        startActivity(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + app.pkg))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }
+
+    private fun uninstall(app: AppInfo) {
+        startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:" + app.pkg)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    private fun showItemMenu(item: HomeItem) {
+        val k = item.key
+        if (k != null) {
+            val app = appByKey(k) ?: return
+            choose(
+                app.label,
+                listOf("Informacoes do app", "Remover da tela inicial", "Desinstalar"),
+                listOf<() -> Unit>(
+                    { openInfo(app) },
+                    {
+                        HomeModel.items.remove(item)
+                        HomeModel.save()
+                        rebuildHome()
+                    },
+                    { uninstall(app) }
+                )
+            )
+        } else {
+            choose(
+                item.name,
+                listOf("Renomear pasta", "Desfazer pasta"),
+                listOf<() -> Unit>(
+                    { renameFolder(item) },
+                    {
+                        HomeModel.items.remove(item)
+                        for (key in item.apps) HomeModel.place(HomeItem(0, 0, 0, key, "", ArrayList()), item.page)
+                        HomeModel.save()
+                        rebuildHome()
+                    }
+                )
+            )
+        }
+    }
+
+    private fun renameFolder(item: HomeItem) {
+        val et = EditText(this)
+        et.setText(item.name)
+        et.setSingleLine(true)
+        AlertDialog.Builder(this).setTitle("Nome da pasta").setView(et)
+            .setPositiveButton("Salvar") { _, _ ->
+                item.name = et.text.toString().trim().ifEmpty { "Pasta" }
+                HomeModel.save()
+                rebuildHome()
+            }.setNegativeButton("Cancelar", null).show()
+    }
+
+    private fun openFolder(item: HomeItem) {
+        val p = pal
+        val dialog = android.app.Dialog(this)
+        dialog.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+        val box = LinearLayout(this)
+        box.orientation = LinearLayout.VERTICAL
+        box.background = Ui.rounded(p.panel or (0xFF shl 24), Ui.dp(this, 26f), Ui.alpha(p.accent, 90), Ui.dpi(this, 1))
+        box.setPadding(Ui.dpi(this, 12), Ui.dpi(this, 14), Ui.dpi(this, 12), Ui.dpi(this, 14))
+
+        val head = TextView(this)
+        head.text = item.name + "  ✎"
+        head.textSize = 16f
+        head.typeface = Typeface.create(Ui.typeface(this), Typeface.BOLD)
+        head.setTextColor(p.accent)
+        head.setPadding(Ui.dpi(this, 8), 0, 0, Ui.dpi(this, 10))
+        head.setOnClickListener {
+            dialog.dismiss()
+            renameFolder(item)
+        }
+        box.addView(head)
+
+        val grid = GridLayout(this)
+        grid.columnCount = 4
+        for (k in item.apps) {
+            val app = appByKey(k) ?: continue
+            val cell = makeCell(app, 50, true)
+            cell.setOnClickListener {
+                dialog.dismiss()
+                launch(app)
+            }
+            cell.setOnLongClickListener {
+                dialog.dismiss()
+                showFolderAppMenu(item, app)
+                true
+            }
+            val lp = GridLayout.LayoutParams()
+            lp.width = Ui.dpi(this, 74)
+            lp.height = ViewGroup.LayoutParams.WRAP_CONTENT
+            grid.addView(cell, lp)
+        }
+        val sv = ScrollView(this)
+        sv.addView(grid)
+        box.addView(sv)
+        dialog.setContentView(box)
+        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+        dialog.window?.setLayout(Ui.dpi(this, 330), ViewGroup.LayoutParams.WRAP_CONTENT)
+        dialog.show()
+    }
+
+    private fun showFolderAppMenu(folder: HomeItem, app: AppInfo) {
+        choose(
+            app.label,
+            listOf("Tirar da pasta", "Informacoes do app"),
+            listOf<() -> Unit>(
+                {
+                    folder.apps.remove(app.key)
+                    if (folder.apps.isEmpty()) HomeModel.items.remove(folder)
+                    HomeModel.place(HomeItem(0, 0, 0, app.key, "", ArrayList()), folder.page)
+                    HomeModel.save()
+                    rebuildHome()
+                },
+                { openInfo(app) }
+            )
+        )
+    }
+
+    private fun confirmImport() {
+        if (apps.isEmpty()) {
+            Toast.makeText(this, "Aguarde a lista de apps carregar", Toast.LENGTH_SHORT).show()
+            return
+        }
+        AlertDialog.Builder(this).setTitle("Importar tela inicial")
+            .setMessage(
+                "O Yoru vai apenas LER a tela inicial do seu launcher atual e copiar apps, pastas e dock para ca. " +
+                    "Nada muda no launcher do Android. Isso substitui a tela inicial atual do Yoru."
+            )
+            .setPositiveButton("Importar") { _, _ ->
+                val r = LayoutImporter.run(this, apps)
+                Toast.makeText(this, r.message, Toast.LENGTH_LONG).show()
+                if (r.ok) {
+                    fillDock()
+                    rebuildHome()
+                }
+            }
+            .setNegativeButton("Cancelar", null).show()
+    }
+
+    private fun chooseHomeApps() {
+        if (apps.isEmpty()) return
+        val list = apps
+        val onHome = HashSet<String>()
+        for (h in HomeModel.items) {
+            h.key?.let { onHome.add(it) }
+            onHome.addAll(h.apps)
+        }
+        val checked = BooleanArray(list.size) { list[it].key in onHome }
+        AlertDialog.Builder(this).setTitle("Apps na tela inicial")
+            .setMultiChoiceItems(list.map { it.label }.toTypedArray(), checked) { _, i, v -> checked[i] = v }
+            .setPositiveButton("Salvar") { _, _ ->
+                val want = list.indices.filter { checked[it] }.map { list[it].key }.toSet()
+                HomeModel.removeKeys(onHome - want)
+                for (a in list) {
+                    if (a.key in want && a.key !in onHome) HomeModel.addApp(a.key, pager.current)
+                }
+                HomeModel.save()
+                rebuildHome()
+            }
+            .setNegativeButton("Cancelar", null).show()
+    }
+
     // ------------------------------------------------------------------ gaveta
 
     private fun openDrawer() {
@@ -478,6 +924,9 @@ class LauncherActivity : Activity() {
     // ------------------------------------------------------------------- gestos
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        lastX = ev.rawX
+        lastY = ev.rawY
+        if (dragItem != null) return handleDrag(ev)
         if (!drawerOpen) {
             val slop = ViewConfiguration.get(this).scaledTouchSlop
             when (ev.actionMasked) {
@@ -514,7 +963,9 @@ class LauncherActivity : Activity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         // Botao Home apertado: volta para a tela inicial, fechando a gaveta.
-        if (intent.action == Intent.ACTION_MAIN && drawerOpen) closeDrawer()
+        if (intent.action == Intent.ACTION_MAIN) {
+            if (drawerOpen) closeDrawer() else if (pager.current != 0) pager.goTo(0, true)
+        }
     }
 
     override fun onStart() {
@@ -553,7 +1004,10 @@ class LauncherActivity : Activity() {
             AppRepo.clearIcons()
             wall.apply()
             applyLook()
+            HomeModel.load()
+            HomeModel.normalize()
             fillDock()
+            rebuildHome()
             if (drawerOpen) fillDrawer()
         }
         updateTime()

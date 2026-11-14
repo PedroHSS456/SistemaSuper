@@ -115,6 +115,21 @@ object Prefs {
         get() = getS("hidden", "")
         set(v) = putS("hidden", v)
 
+    var homeCols: Int
+        get() = getI("hCols", 4)
+        set(v) = putI("hCols", v)
+
+    var homeRows: Int
+        get() = getI("hRows", 5)
+        set(v) = putI("hRows", v)
+
+    /** Layout da tela inicial (JSON). Salvar aqui nao dispara reaplicar o visual. */
+    var home: String
+        get() = sp.getString("home", "") ?: ""
+        set(v) {
+            sp.edit().putString("home", v).apply()
+        }
+
     fun list(raw: String): List<String> = if (raw.isEmpty()) emptyList() else raw.split("|")
 
     fun reset() {
