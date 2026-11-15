@@ -28,7 +28,7 @@ jobs:
           export PATH="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
           git clone --depth 1 --branch sf_11 https://github.com/official-stockfish/Stockfish.git "$RUNNER_TEMP/sf"
           cd "$RUNNER_TEMP/sf/src"
-          aarch64-linux-android21-clang++ -O3 -std=c++17 -stdlib=libc++ -fno-exceptions \
+          aarch64-linux-android21-clang++ -O3 -std=c++11 -stdlib=libc++ -fno-exceptions \
             -DNDEBUG -DIS_64BIT -DUSE_POPCNT -fPIE -pie -static-libstdc++ \
             -o stockfish *.cpp syzygy/tbprobe.cpp -latomic -lm
           llvm-strip stockfish
