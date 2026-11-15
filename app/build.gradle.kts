@@ -4,27 +4,26 @@ plugins {
 }
 
 android {
-    namespace = "br.sistemasuper.yoru"
+    namespace = "br.sistemasuper.chess"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "br.sistemasuper.yoru"
-        minSdk = 28
+        applicationId = "br.sistemasuper.chess"
+        minSdk = 29
         targetSdk = 34
-        // Cada build no GitHub sobe o numero, entao atualiza por cima da versao anterior.
         val build = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
         versionCode = build
         versionName = "1.$build"
+        ndk { abiFilters += "arm64-v8a" }
     }
 
-    // Chave fixa para que novas versoes atualizem por cima da anterior,
-    // sem precisar desinstalar. E uma chave de uso pessoal (sideload).
+    // Chave fixa de uso pessoal: novas versoes atualizam por cima da anterior.
     signingConfigs {
-        create("yoru") {
-            storeFile = file("yoru.keystore")
-            storePassword = "yorulauncher"
-            keyAlias = "yoru"
-            keyPassword = "yorulauncher"
+        create("chess") {
+            storeFile = file("chess.keystore")
+            storePassword = "chessauto"
+            keyAlias = "chess"
+            keyPassword = "chessauto"
         }
     }
 
@@ -32,12 +31,26 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("yoru")
+            signingConfig = signingConfigs.getByName("chess")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
+    }
+
+    // O Stockfish vai dentro do APK como libstockfish.so e e executado a partir da
+    // pasta de bibliotecas nativas do app; por isso precisa ser extraido na instalacao.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+            keepDebugSymbols += "**/libstockfish.so"
+        }
+    }
+
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
     }
 
     compileOptions {

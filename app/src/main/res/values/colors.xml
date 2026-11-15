@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="yoru_bg">#0E0B1F</color>
-    <color name="ic_bg">#1A1438</color>
+    <color name="ic_bg">#FF0F1720</color>
 </resources>

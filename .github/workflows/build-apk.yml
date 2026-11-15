@@ -19,6 +19,20 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Compilar Stockfish 17.1 para Android arm64
+        run: |
+          set -euo pipefail
+          NDK="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT}}}"
+          export PATH="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH"
+          git clone --depth 1 --branch sf_17.1 https://github.com/official-stockfish/Stockfish.git "$RUNNER_TEMP/sf"
+          cd "$RUNNER_TEMP/sf/src"
+          make -j"$(nproc)" build ARCH=armv8 COMP=ndk
+          llvm-strip stockfish
+          mkdir -p "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a"
+          cp stockfish "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/libstockfish.so"
+          ls -l "$GITHUB_WORKSPACE/app/src/main/jniLibs/arm64-v8a/"
+          file stockfish
+
       - name: Aceitar licencas do SDK (ja vem instalado no runner)
         run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
@@ -26,22 +40,22 @@ jobs:
         with:
           gradle-version: "8.5"
 
-      - name: Compilar
+      - name: Compilar APK
         run: gradle :app:assembleRelease --no-daemon --stacktrace
 
       - name: Renomear APK
-        run: cp app/build/outputs/apk/release/app-release.apk Yoru-Launcher.apk
+        run: cp app/build/outputs/apk/release/app-release.apk Chess-Auto-Player.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Yoru-Launcher
-          path: Yoru-Launcher.apk
+          name: Chess-Auto-Player
+          path: Chess-Auto-Player.apk
 
       - name: Publicar para baixar no celular
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "v1.${{ github.run_number }}" Yoru-Launcher.apk \
-            --title "Yoru Launcher 1.${{ github.run_number }}" \
-            --notes "Baixe o Yoru-Launcher.apk, abra e instale. Nada no seu Android muda ate voce escolher esse launcher como padrao." \
+          gh release create "v1.${{ github.run_number }}" Chess-Auto-Player.apk \
+            --title "Chess Auto Player 1.${{ github.run_number }}" \
+            --notes "Baixe o Chess-Auto-Player.apk e instale. Veja o README para ativar." \
             --latest

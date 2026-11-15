@@ -1,7 +1,8 @@
 .gradle/
 build/
 local.properties
-.idea/
 *.iml
+.idea/
 captures/
-.DS_Store
+# o Stockfish e compilado pelo workflow e colocado aqui na hora do build
+app/src/main/jniLibs/

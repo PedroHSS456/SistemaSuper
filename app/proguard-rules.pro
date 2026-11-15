@@ -1,2 +1,1 @@
-# Sem bibliotecas externas: nada especial para manter.
--dontwarn kotlin.**
+# Sem regras extras: o servico e a activity sao mantidos pelo manifesto.

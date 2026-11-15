@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "SistemaSuper"
+rootProject.name = "ChessAutoPlayer"
 include(":app")
