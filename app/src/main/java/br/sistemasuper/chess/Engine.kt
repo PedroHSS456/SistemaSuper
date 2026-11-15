@@ -10,10 +10,10 @@ import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 
 /**
- * Stockfish 17.1 embutido no APK (libstockfish.so na pasta nativa do app), falado via UCI.
- * Elo 1320..3189: UCI_LimitStrength + UCI_Elo do proprio Stockfish.
- * Elo >= 3190: forca maxima.
- * Elo < 1320: o Stockfish nao baixa disso; aproximamos escolhendo entre os melhores lances
+ * Stockfish 11 embutido no APK (libstockfish.so na pasta nativa do app), falado via UCI.
+ * Elo 1350..2849: UCI_LimitStrength + UCI_Elo do proprio Stockfish.
+ * Elo >= 2850: forca maxima.
+ * Elo < 1350: o Stockfish nao baixa disso; aproximamos escolhendo entre os melhores lances
  * (MultiPV) com chance crescente de escolher um lance pior.
  */
 class Engine(private val ctx: Context) {
@@ -74,9 +74,9 @@ class Engine(private val ctx: Context) {
     fun best(fen: String, elo: Int, ms: Int): String? {
         if (!ensure()) return null
         q.clear()
-        val low = elo < 1320
-        send("setoption name UCI_LimitStrength value ${elo in 1320..3189}")
-        if (elo in 1320..3189) send("setoption name UCI_Elo value $elo")
+        val low = elo < 1350
+        send("setoption name UCI_LimitStrength value ${elo in 1350..2849}")
+        if (elo in 1350..2849) send("setoption name UCI_Elo value $elo")
         send("setoption name MultiPV value ${if (low) 8 else 1}")
         send("position fen $fen")
         searching = true
@@ -101,7 +101,7 @@ class Engine(private val ctx: Context) {
         if (best == null) { send("stop"); return null }
         if (low && best != "(none)" && lines.isNotEmpty()) {
             val moves = lines.toSortedMap().values.map { it.second }
-            val p = (0.3 + (1320 - elo) / 720.0 * 0.55).coerceIn(0.3, 0.85)
+            val p = (0.3 + (1350 - elo) / 750.0 * 0.55).coerceIn(0.3, 0.85)
             var k = 0
             while (k < moves.size - 1 && Random.nextDouble() < p) k++
             return moves[k]

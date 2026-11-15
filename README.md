@@ -1,6 +1,6 @@
 # Chess Auto Player
 
-App Android nativo (Kotlin), **um único APK** autossuficiente: Stockfish 17.1 embutido, leitura do tabuleiro, toques automáticos e menu flutuante. Sem Termux, ADB, root, servidor, API ou outro app. Sem permissão de INTERNET (o app não consegue acessar a rede). Desinstalou o APK, acabou.
+App Android nativo (Kotlin), **um único APK** autossuficiente: Stockfish 11 embutido (motor clássico, ~1 MB), leitura do tabuleiro, toques automáticos e menu flutuante. Sem Termux, ADB, root, servidor, API ou outro app. Sem permissão de INTERNET (o app não consegue acessar a rede). Desinstalou o APK, acabou.
 
 ## Baixar e instalar (só no celular)
 
@@ -16,7 +16,7 @@ O APK é recompilado a cada push na `main` (aba Actions); o workflow compila o S
 
 - **ON/OFF**: OFF interrompe a busca do motor e qualquer toque pendente na hora; desligado, nunca joga.
 - **Atraso**: 0–5000 ms de espera antes de cada jogada.
-- **Elo**: 600–3190. De 1320 a 3189 usa `UCI_Elo` do Stockfish. No fim da barra (3190) = força máxima. Abaixo de 1320 o Stockfish não desce, então é uma aproximação (escolhe entre os melhores lances com chance crescente de errar).
+- **Elo**: 600–2900. De 1350 a 2849 usa `UCI_Elo` do Stockfish. De 2850 para cima = força máxima. Abaixo de 1350 o Stockfish não desce, então é uma aproximação (escolhe entre os melhores lances com chance crescente de errar). Nenhum valor equivale a um Elo oficial: é uma simulação.
 
 ## Limitações reais do Android (não dá para contornar)
 
@@ -29,4 +29,4 @@ O APK é recompilado a cada push na `main` (aba Actions); o workflow compila o S
 
 ## Compilar localmente
 
-Precisa do NDK para o Stockfish: `make -C src build ARCH=armv8 COMP=ndk` nos fontes do Stockfish 17.1, copiar o binário para `app/src/main/jniLibs/arm64-v8a/libstockfish.so` e rodar `gradle :app:assembleRelease`. Mais simples: deixe o GitHub Actions fazer isso.
+O comando de compilação do Stockfish com o NDK está em `.github/workflows/build-apk.yml`; o binário vai para `app/src/main/jniLibs/arm64-v8a/libstockfish.so` e depois `gradle :app:assembleRelease`. Mais simples: deixe o GitHub Actions fazer isso.

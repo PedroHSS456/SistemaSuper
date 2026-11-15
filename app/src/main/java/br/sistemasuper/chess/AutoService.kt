@@ -358,13 +358,13 @@ class AutoService : AccessibilityService() {
                 { Prefs.set(this@AutoService, "delay", delayMs) }
             ))
         }
-        // Elo 600..3190 em passos de 10; o fim da barra = forca maxima
+        // Elo 600..2900 em passos de 10; de 2850 para cima = forca maxima
         val eLbl = label()
-        fun eloText() { eLbl.text = if (elo >= 3190) "Elo: Máx" else "Elo: $elo" }
+        fun eloText() { eLbl.text = if (elo >= 2850) "Elo: Máx" else "Elo: $elo" }
         eloText()
         val eBar = SeekBar(ctx).apply {
-            max = 259
-            progress = ((elo - 600) / 10).coerceIn(0, 259)
+            max = 230
+            progress = ((elo - 600) / 10).coerceIn(0, 230)
             setOnSeekBarChangeListener(Sb(
                 { p -> elo = 600 + p * 10; eloText() },
                 { Prefs.set(this@AutoService, "elo", elo) }
